@@ -18,13 +18,16 @@ def haversine(x0, y0, x1, y1, r):
 
     return result
 
-def load_pairs():
-    pairs = [{"x0": 22.22, "y0": 33.33, "x1": 10.0, "y1": 13.3}]
+
+def load_pairs(filename):
+    with open(filename, "r") as fin:
+        pairs = json.load(fin)
     return pairs
+
 
 def main():
     input_start = time.time()
-    pairs = load_pairs()
+    pairs = load_pairs("pairs.json")
     n_pairs = len(pairs)
     input_time = time.time() - input_start
 
@@ -37,11 +40,12 @@ def main():
     average = sum / n_pairs
 
     math_time = time.time() - math_start
-    throughput = n_pairs / math_time 
+    throughput = n_pairs / math_time
     print(f"{average=} km")
     print(f"{input_time=} s")
     print(f"{math_time=} s")
     print(f"{throughput=} distances per second")
+
 
 if __name__ == "__main__":
     main()

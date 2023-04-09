@@ -24,11 +24,31 @@ Brainfuck compilers in rust - https://github.com/pretzelhammer/rust-blog/blob/ma
 Some useful binary exploration tools
 ```bash
 gcc -O0 sum.c-o sum 
-gcc -S -masm=intel sum.c # to make assembly file with Intel syntax
+gcc -S -masm=intel sum.c # to make assembly file with Intel mnemonic
 objdump -t sum # preview all symbols in binary
-objdump -d -M intel sum # disassembly and use Intel format
+objdump -d -M intel sum # disassembly and use Intel mnemonic
 objdump -d -M intel sum | cat --language=asm # syntax highligt with batcat
 ```
 
 rsp - register stack pointer - points to the top of the stack memory, decremented to allocate the stack memory  
 rbp - register base ponter / frame pointer - on function call its set to current value of stack pointer
+
+
+## Haversine algorithm
+Come up with the estimate of how fast can we do 10m haversine distanes with all performance multipliers?
+
+## 8086
+`mov` actually a copy content of one register to another
+`mov <dest>,<source>`
+
+register moves ax,bx to move all 16 bit, al,bl to move lower 8bits, and ah, bh to move higher 8 bits.
+binary instruction stream for move:
+
+bit pattern [100010][Dbit][Wbit]-[2][3][3] that converts to move assembly instruction
+
+## Homework 1
+Binary instruction stream
+preview: `xxd -b <file>`
+find my architecture: `uname -m` -> x86_64
+dissasemble binary machine code stream: `objdump -D -b binary -m i386:x86-64 -M intel muliple_move.bin`
+how to do .asm to machine code?
