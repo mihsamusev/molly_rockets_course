@@ -37,7 +37,7 @@ rbp - register base ponter / frame pointer - on function call its set to current
 ## Haversine algorithm
 Come up with the estimate of how fast can we do 10m haversine distanes with all performance multipliers?
 
-## 8086
+## 8086 mov
 `mov` actually a copy content of one register to another
 `mov <dest>,<source>`
 
@@ -46,9 +46,52 @@ binary instruction stream for move:
 
 bit pattern [100010][Dbit][Wbit]-[2][3][3] that converts to move assembly instruction
 
-## Homework 1
+### Homework 1
 Binary instruction stream
 preview: `xxd -b <file>`
 find my architecture: `uname -m` -> x86_64
 dissasemble binary machine code stream: `objdump -D -b binary -m i386:x86-64 -M intel muliple_move.bin`
 how to do .asm to machine code?
+
+### Homework 2
+- 16 bit registers that each have high / low 8 bit parts
+    - AX AH:AL Accumulator
+    - BX BH:BL Base register
+    - CX CH:CL Counting register
+    - DX DH:DL Data register
+
+- 16 bit only integers
+    - SP - stack pointer
+    - BP - base pointer
+    - SI - source index
+    - BI - base index
+
+
+```asm
+mov bx, [75] # Read 76th element in memory to bx
+mov [75], bx # Write bx to 76th element in memory
+```
+
+Effective address calculation, from position of bp (base pointer)
+```asm
+mov bx, [bp + 75]
+```
+
+mod field will describe a displacement for a memory ivolved move
+00 -> no displacement excep for rm of 110
+01 -> 8 bit displacement
+10 -> 16 bit displacement
+11 -> register to register move
+
+rm field - which equation for memory address calculation to use
+
+## immediate mov
+Immediate to register mov
+[1011][wide][REG] [LO][HI]
+
+mov [BP + 75], byte 12 -> move as 8 bits
+mov [BP + 75], word 12 -> move as 16 bits
+
+One caveat is that the following 2 are same binary, since unless actual arithmetic is performed all values are unsigned.
+mov cx, 12
+mov cx, -12
