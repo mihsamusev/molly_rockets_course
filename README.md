@@ -51,7 +51,7 @@ Binary instruction stream
 preview: `xxd -b <file>`
 find my architecture: `uname -m` -> x86_64
 dissasemble binary machine code stream: `objdump -D -b binary -m i386:x86-64 -M intel muliple_move.bin`
-how to do .asm to machine code?
+how to do .asm to machine code
 
 ### Homework 2
 - 16 bit registers that each have high / low 8 bit parts
