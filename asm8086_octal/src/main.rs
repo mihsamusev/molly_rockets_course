@@ -1,6 +1,5 @@
 use std::fmt::Display;
 use std::io::Read;
-use std::ops::Add;
 use std::{fs, io};
 
 fn read_bytes(filename: &str) -> io::Result<Vec<u8>> {
@@ -82,20 +81,20 @@ impl Display for WordRegister {
 }
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Pointer {
-    BX_SI(u16),
-    BX_DI(u16),
-    BP_SI(u16),
-    BP_DI(u16),
-    SI(u16),
-    DI(u16),
-    Direct(u16),
-    BP(u16),
-    BX(u16),
+    BX_SI(i16),
+    BX_DI(i16),
+    BP_SI(i16),
+    BP_DI(i16),
+    SI(i16),
+    DI(i16),
+    Direct(i16),
+    BP(i16),
+    BX(i16),
     Unread,
 }
 
 impl Pointer {
-    fn from_r(r: u8, value: u16) -> Self {
+    fn from_r(r: u8, value: i16) -> Self {
         match r {
             0 => Pointer::BX_SI(value),
             1 => Pointer::BX_DI(value),
@@ -157,10 +156,6 @@ enum Operand {
     Rw(Address),
     Eb(Address), // effective address byte
     Ew(Address), // effective word
-    Db(u8),
-    Dw(u16),
-    Dc(i8),
-    DnUnread,
     DcUnread,
     DwUnread,
     SR, // segment register
@@ -223,7 +218,7 @@ fn resolve_mov_operands(byte: u8) -> (u8, u8, u8) {
     (x, r_or_s, m)
 }
 
-fn resolve_address(operand: Operand, x: u8, r_or_s: u8, m: u8, disp: Option<u16>) -> Address {
+fn resolve_address(operand: Operand, x: u8, r_or_s: u8, m: u8, disp: Option<i16>) -> Address {
     use Operand::*;
     match (operand, x, disp) {
         (Rb(_), _, _) => Address::ByteRegister(ByteRegister::from_r(r_or_s)),
@@ -238,8 +233,8 @@ fn resolve_address(operand: Operand, x: u8, r_or_s: u8, m: u8, disp: Option<u16>
     }
 }
 
-fn to_u16(low_bit: u8, high_bit: u8) -> u16 {
-    ((high_bit as u16) << 8) | (low_bit as u16)
+fn to_u16(low_bit: u8, high_bit: u8) -> i16 {
+    ((high_bit as i16) << 8) | (low_bit as i16)
 }
 
 fn main() -> Result<(), String> {
@@ -266,7 +261,7 @@ fn main() -> Result<(), String> {
                 match x {
                     0 => {
                         let disp = if (r_or_s) == 6 {
-                            Some(second_bit as u16)
+                            Some(second_bit as i16)
                         } else {
                             None
                         };
@@ -276,7 +271,7 @@ fn main() -> Result<(), String> {
                     }
                     1 => {
                         let low_bit = bytes.pop().ok_or("could not finish parsing")?;
-                        let disp = Some(low_bit as u16);
+                        let disp = Some(low_bit as i16);
                         let src = resolve_address(src, x, r_or_s, m, disp);
                         let dest = resolve_address(dest, x, r_or_s, m, disp);
                         println!(
