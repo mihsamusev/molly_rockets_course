@@ -211,29 +211,47 @@ fn opcode_to_instruction(opcode_byte: u8) -> Asm8086 {
     }
 }
 
-fn resolve_mov_operands(byte: u8) -> (u8, u8, u8) {
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Mod {
+    MemoryNoDisp,
+    Memory8BitDisp,
+    Memory16BitDisp,
+    Register,
+}
+
+fn resolve_mov_operands(byte: u8) -> (Mod, u8, u8) {
     let x = (byte & 0b11000000) >> 6;
     let r_or_s = (byte & 0b00111000) >> 3;
     let m = byte & 0b00000111;
-    (x, r_or_s, m)
+    let mode = match x {
+        0 => Mod::MemoryNoDisp,
+        1 => Mod::Memory8BitDisp,
+        2 => Mod::Memory16BitDisp,
+        _ => Mod::Register,
+    };
+    (mode, r_or_s, m)
 }
 
-fn resolve_address(operand: Operand, x: u8, r_or_s: u8, m: u8, disp: Option<i16>) -> Address {
+fn resolve_address(operand: Operand, mode: Mod, r_or_s: u8, m: u8, disp: Option<i16>) -> Address {
     use Operand::*;
-    match (operand, x, disp) {
+    match (operand, mode, disp) {
         (Rb(_), _, _) => Address::ByteRegister(ByteRegister::from_r(r_or_s)),
         (Rw(_), _, _) => Address::WordRegister(WordRegister::from_r(r_or_s)),
-        (Eb(_), 0, None) => Address::Pointer(Pointer::from_r(m, 0)),
-        (Ew(_), 0, None) => Address::Pointer(Pointer::from_r(m, 0)),
-        (Eb(_), 1 | 2, Some(disp)) => Address::Pointer(Pointer::from_r(m, disp)),
-        (Ew(_), 1 | 2, Some(disp)) => Address::Pointer(Pointer::from_r(m, disp)),
-        (Eb(_), 3, _) => Address::ByteRegister(ByteRegister::from_r(m)),
-        (Ew(_), 3, _) => Address::WordRegister(WordRegister::from_r(m)),
+        (Eb(_), Mod::MemoryNoDisp, None) => Address::Pointer(Pointer::from_r(m, 0)),
+        (Ew(_), Mod::MemoryNoDisp, None) => Address::Pointer(Pointer::from_r(m, 0)),
+        (Eb(_), Mod::Memory8BitDisp | Mod::Memory16BitDisp, Some(disp)) => {
+            Address::Pointer(Pointer::from_r(m, disp))
+        }
+        (Ew(_), Mod::Memory8BitDisp | Mod::Memory16BitDisp, Some(disp)) => {
+            Address::Pointer(Pointer::from_r(m, disp))
+        }
+        (Eb(_), Mod::Register, _) => Address::ByteRegister(ByteRegister::from_r(m)),
+        (Ew(_), Mod::Register, _) => Address::WordRegister(WordRegister::from_r(m)),
         _ => Address::Unread,
     }
 }
 
-fn to_u16(low_bit: u8, high_bit: u8) -> i16 {
+fn to_disp(low_bit: u8, high_bit: u8) -> i16 {
     ((high_bit as i16) << 8) | (low_bit as i16)
 }
 
@@ -247,53 +265,41 @@ fn main() -> Result<(), String> {
             Asm8086::Mov(reg, Operand::DcUnread) => {
                 let value_bit = bytes.pop().ok_or("could not finish parsing")?;
                 let value = value_bit as i8;
-                println!("[{first_bit:#o}][{value_bit:#o}] = mov {reg}, {value}")
+                println!("[{first_bit:#o}][{value_bit:#o}]\nmov {reg}, {value}")
             }
             Asm8086::Mov(reg, Operand::DwUnread) => {
                 let low_bit = bytes.pop().ok_or("could not finish parsing")?;
                 let high_bit = bytes.pop().ok_or("could not finish parsing")?;
-                let value = to_u16(low_bit, high_bit);
-                println!("[{first_bit:#o}][{low_bit:#o}][{high_bit:#o}] = mov {reg}, {value}")
+                let value = to_disp(low_bit, high_bit);
+                println!("[{first_bit:#o}][{low_bit:#o}][{high_bit:#o}]\nmov {reg}, {value}")
             }
             Asm8086::Mov(dest, src) => {
                 let second_bit = bytes.pop().ok_or("could not finish parsing")?;
-                let (x, r_or_s, m) = resolve_mov_operands(second_bit);
-                match x {
-                    0 => {
-                        let disp = if (r_or_s) == 6 {
-                            Some(second_bit as i16)
-                        } else {
-                            None
-                        };
-                        let src = resolve_address(src, x, r_or_s, m, disp);
-                        let dest = resolve_address(dest, x, r_or_s, m, disp);
-                        println!("[{first_bit:#o}][{second_bit:#o}] = mov {dest}, {src}");
+                let (mode, r_or_s, m) = resolve_mov_operands(second_bit);
+                let disp = match (mode, r_or_s) {
+                    (Mod::MemoryNoDisp, 6) => {
+                        println!("[{first_bit:#o}][{second_bit:#o}]");
+                        Some(second_bit as i16)
                     }
-                    1 => {
+                    (Mod::Memory8BitDisp, _) => {
                         let low_bit = bytes.pop().ok_or("could not finish parsing")?;
-                        let disp = Some(low_bit as i16);
-                        let src = resolve_address(src, x, r_or_s, m, disp);
-                        let dest = resolve_address(dest, x, r_or_s, m, disp);
-                        println!(
-                            "[{first_bit:#o}][{second_bit:#o}][{low_bit:#o}] = mov {dest}, {src}"
-                        );
+                        println!("[{first_bit:#o}][{second_bit:#o}][{low_bit:#o}]");
+                        Some(low_bit as i16)
                     }
-                    2 => {
+                    (Mod::Memory16BitDisp, _) => {
                         let low_bit = bytes.pop().ok_or("could not finish parsing")?;
                         let high_bit = bytes.pop().ok_or("could not finish parsing")?;
-                        let disp = Some(to_u16(low_bit, high_bit));
-                        let src = resolve_address(src, x, r_or_s, m, disp);
-                        let dest = resolve_address(dest, x, r_or_s, m, disp);
-                        println!("[{first_bit:#o}][{second_bit:#o}][{low_bit:#0}][{high_bit:#o}] = mov {dest}, {src}");
+                        println!("[{first_bit:#o}][{second_bit:#o}][{low_bit:#o}][{high_bit:#o}]");
+                        Some(to_disp(low_bit, high_bit))
                     }
-                    3 => {
-                        let disp = None;
-                        let src = resolve_address(src, x, r_or_s, m, disp);
-                        let dest = resolve_address(dest, x, r_or_s, m, disp);
-                        println!("[{first_bit:#o}][{second_bit:#o}] = mov {dest}, {src}");
+                    _ => {
+                        println!("[{first_bit:#o}][{second_bit:#o}]");
+                        None
                     }
-                    _ => {}
-                }
+                };
+                let src = resolve_address(src, mode, r_or_s, m, disp);
+                let dest = resolve_address(dest, mode, r_or_s, m, disp);
+                println!("mov {dest}, {src}");
             }
             Asm8086::Unknown => println!("unable to parse opcode bit {first_bit:#o}"),
         }
