@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use std::ops::Add;
 use std::{io, fs};
 use std::io::Read;
 
@@ -21,7 +22,6 @@ enum ByteRegister {
     CH,
     DH,
     BH,
-    Unread
 }
 
 use ByteRegister::*;
@@ -41,7 +41,6 @@ enum WordRegister {
     BP,
     SI,
     DI,
-    Unread
 }
 
 use WordRegister::*;
@@ -61,6 +60,7 @@ enum Pointer {
     SI(u16),
     DI(u16),
     Direct(u16),
+    BP(u16),
     BX(u16),
     Unread
 }
@@ -74,7 +74,7 @@ impl Pointer {
         3 => Pointer::BP_DI(value),
         4 => Pointer::SI(value),
         5 => Pointer::DI(value),
-        6 => Pointer::Direct(value),
+        6 => Pointer::BP(value),
         7 => Pointer::BX(value),
         _ => Pointer::Unread
        }
@@ -89,14 +89,15 @@ enum Address {
     ByteRegisterUnread,
     WordRegisterUnread,
     PointerUnread,
+    Unread
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Operand {
-    Rb(ByteRegister),
-    Rw(WordRegister),
-    Eb(ByteRegister), // effective address byte
-    Ew(WordRegister), // effective word
+    Rb(Address),
+    Rw(Address),
+    Eb(Address), // effective address byte
+    Ew(Address), // effective word
     Db(u8),
     Dw(u16),
     Dc(i8),
@@ -110,10 +111,10 @@ impl Display for Operand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Operand::*;
         match self {
-            Rb(reg) if (*reg) != ByteRegister::Unread => write!(f, "{reg:?}"),
-            Eb(reg) if (*reg) != ByteRegister::Unread => write!(f, "{reg:?}"),
-            Rw(reg) if (*reg) != WordRegister:: Unread => write!(f, "{reg:?}"),
-            Ew(reg) if (*reg) != WordRegister:: Unread => write!(f, "{reg:?}"),
+            Rb(reg) if (*reg) != Address::Unread => write!(f, "{reg:?}"),
+            Eb(reg) if (*reg) != Address::Unread => write!(f, "{reg:?}"),
+            Rw(reg) if (*reg) != Address:: Unread => write!(f, "{reg:?}"),
+            Ew(reg) if (*reg) != Address:: Unread => write!(f, "{reg:?}"),
             _ => write!(f, "{self:?}")
         }
     }
@@ -128,17 +129,19 @@ enum Asm8086 {
 
 fn opcode_to_instruction(opcode_byte: u8) -> Asm8086 {
     use Operand::*;
+    use ByteRegister::*;
+    use WordRegister::*;
     match opcode_byte {
-        0o210 => Asm8086::Mov(Eb(ByteRegister::Unread), Rb(ByteRegister::Unread)),
-        0o211 => Asm8086::Mov(Ew(WordRegister::Unread), Rw(WordRegister::Unread)),
-        0o212 => Asm8086::Mov(Rb(ByteRegister::Unread), Eb(ByteRegister::Unread)),
-        0o213 => Asm8086::Mov(Rw(WordRegister::Unread), Ew(WordRegister::Unread)),
-        0o214 => Asm8086::Mov(Ew(WordRegister::Unread), SR),
-        0o216 => Asm8086::Mov(SR, Ew(WordRegister::Unread)),
-        0o261 => Asm8086::Mov(Rb(ByteRegister::CL), DcUnread),
-        0o265 => Asm8086::Mov(Rb(ByteRegister::CH), DcUnread),
-        0o271 => Asm8086::Mov(Rw(WordRegister::CX), DwUnread),
-        0o272 => Asm8086::Mov(Rw(WordRegister::DX), DwUnread),
+        0o210 => Asm8086::Mov(Eb(Address::ByteRegisterUnread), Rb(Address::ByteRegisterUnread)),
+        0o211 => Asm8086::Mov(Ew(Address::WordRegisterUnread), Rw(Address::WordRegisterUnread)),
+        0o212 => Asm8086::Mov(Rb(Address::ByteRegisterUnread), Eb(Address::ByteRegisterUnread)),
+        0o213 => Asm8086::Mov(Rw(Address::WordRegisterUnread), Ew(Address::WordRegisterUnread)),
+        0o214 => Asm8086::Mov(Ew(Address::WordRegisterUnread), SR),
+        0o216 => Asm8086::Mov(SR, Ew(Address::WordRegisterUnread)),
+        0o261 => Asm8086::Mov(Rb(Address::ByteRegister(CL)), DcUnread),
+        0o265 => Asm8086::Mov(Rb(Address::ByteRegister(CH)), DcUnread),
+        0o271 => Asm8086::Mov(Rw(Address::WordRegister(CX)), DwUnread),
+        0o272 => Asm8086::Mov(Rw(Address::WordRegister(DX)), DwUnread),
         _  => Asm8086::Unknown
     }
 }
@@ -150,24 +153,20 @@ fn resolve_mov_operands(byte: u8) -> (u8, u8, u8) {
    (x, r_or_s, m)
 }
 
-fn resolve_register_mode(register_operand: Operand, r: u8) -> Operand {
-    match (register_operand, r) {
-        (Operand::Rb(ByteRegister::Unread), 0..=7) => Operand::Rb(ByteRegister::from_r(r)),
-        (Operand::Eb(ByteRegister::Unread), 0..=7) => Operand::Eb(ByteRegister::from_r(r)),
-        (Operand::Rw(WordRegister::Unread), 0..=7) => Operand::Rw(WordRegister::from_r(r)),
-        (Operand::Ew(WordRegister::Unread), 0..=7) => Operand::Ew(WordRegister::from_r(r)),
-        _ => register_operand
-    }
-}
 
 
-
-fn resolve_operands_address(operand: Operand, x: u8, r_or_s: u8, m: u8) -> Operand {
+fn resolve_address(operand: Operand, x: u8, r_or_s: u8, m: u8, disp: Option<u16>) -> Address {
     use Operand::*;
-    match (operand, x, m) {
-        (Rb(_) | Rw(_), _, _) => resolve_register_mode(operand, r_or_s),
-        (Eb(_) | Ew(_), 3, _) => resolve_register_mode(operand, m),
-        _ => operand
+    match (operand, x, disp) {
+        (Rb(_), _, _) => Address::ByteRegister(ByteRegister::from_r(r_or_s)),
+        (Rw(_), _, _) => Address::WordRegister(WordRegister::from_r(r_or_s)),
+        (Eb(_), 0, None) => Address::Pointer(Pointer::from_r(m, 0)),
+        (Ew(_), 0, None) => Address::Pointer(Pointer::from_r(m, 0)),
+        (Eb(_), 1 | 2, Some(disp)) => Address::Pointer(Pointer::from_r(m, disp)),
+        (Ew(_), 1 | 2, Some(disp)) => Address::Pointer(Pointer::from_r(m, disp)),
+        (Eb(_), 3, _) => Address::ByteRegister(ByteRegister::from_r(m)),
+        (Ew(_), 3, _) => Address::WordRegister(WordRegister::from_r(m)),
+        _ => Address::Unread
     }
 }
 
@@ -198,24 +197,31 @@ fn main() -> Result<(), String>{
                 let (x, r_or_s, m)= resolve_mov_operands(second_bit);
                 match x {
                     0 => {
-                        let value = if r_or_s == 6 { second_bit} else {0};
-                        Pointer::from_r(r_or_s, value as u16);
-                        println!("[{first_bit:#o}][{second_bit:#o}] = MOV {dest}, {src}");
+                        let disp = if (r_or_s) == 6 {Some(second_bit as u16)} else {None};
+                        let src = resolve_address(src, x, r_or_s, m, disp);
+                        let dest = resolve_address(dest, x, r_or_s, m, disp);
+                        println!("[{first_bit:#o}][{second_bit:#o}] = MOV {dest:?}, {src:?}");
                     },
                     1 => {
                         let low_bit = bytes.pop().ok_or("could not finish parsing")?;
-                        println!("[{first_bit:#o}][{second_bit:#o}][{low_bit:#o}] = MOV {dest}, {src}");
+                        let disp = Some(low_bit as u16);
+                        let src = resolve_address(src, x, r_or_s, m, disp);
+                        let dest = resolve_address(dest, x, r_or_s, m, disp);
+                        println!("[{first_bit:#o}][{second_bit:#o}][{low_bit:#o}] = MOV {dest:?}, {src:?}");
                     },
                     2 => {
                         let low_bit = bytes.pop().ok_or("could not finish parsing")?;
                         let high_bit = bytes.pop().ok_or("could not finish parsing")?;
-                        let value= to_u16(low_bit, high_bit);
-                        println!("[{first_bit:#o}][{second_bit:#o}][{low_bit:#0}][{high_bit:#o}] = MOV {dest}, {src}");
+                        let disp = Some(to_u16(low_bit, high_bit));
+                        let src = resolve_address(src, x, r_or_s, m, disp);
+                        let dest = resolve_address(dest, x, r_or_s, m, disp);
+                        println!("[{first_bit:#o}][{second_bit:#o}][{low_bit:#0}][{high_bit:#o}] = MOV {dest:?}, {src:?}");
                    },
                     3 => {
-                        let src = resolve_operands_address(src, x, r_or_s, m);
-                        let dest = resolve_operands_address(dest, x, r_or_s, m);
-                        println!("[{first_bit:#o}][{second_bit:#o}] = MOV {dest}, {src}");
+                        let disp = None;
+                        let src = resolve_address(src, x, r_or_s, m, disp);
+                        let dest = resolve_address(dest, x, r_or_s, m, disp);
+                        println!("[{first_bit:#o}][{second_bit:#o}] = MOV {dest:?}, {src:?}");
                     },
                     _ => {}
                 }
