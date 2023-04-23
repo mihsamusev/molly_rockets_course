@@ -1,16 +1,6 @@
-use std::borrow::Borrow;
-use std::fmt::{Display, Write};
-use std::io::Read;
-use std::{fs, io};
+use std::fmt::{Display};
+use asm8086_octal::bytes_io;
 
-fn read_bytes(filename: &str) -> io::Result<Vec<u8>> {
-    let mut file = fs::File::open(filename)?;
-    let metadata = fs::metadata(filename)?;
-    let mut buffer = vec![0; metadata.len() as usize];
-    file.read_exact(&mut buffer)?;
-
-    Ok(buffer)
-}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ByteRegister {
@@ -297,16 +287,6 @@ fn to_word(low_byte: u8, high_byte: u8) -> i16 {
     ((high_byte as i16) << 8) | (low_byte as i16)
 }
 
-fn read_bytes_cli() -> Result<Vec<u8>, String> {
-    let args: Vec<String> = std::env::args().collect();
-    match args.len() {
-        1 => Err("Have not found binary to decompile".into()),
-        _ => {
-            let filename = args[1].borrow();
-            read_bytes(filename).map_err(|_| format!("Unable to read file '{}'", filename))
-        }
-    }
-}
 
 fn next_byte_disp(bytes: &[u8], end_ptr: usize) -> Result<Disp, String> {
     let low_byte = *bytes.get(end_ptr).ok_or("could not parse byte")?;
@@ -320,14 +300,6 @@ fn next_word_disp(bytes: &[u8], end_ptr: usize) -> Result<Disp, String> {
     Ok(Disp::D16(disp_word))
 }
 
-fn format_bytes(bytes: &[u8], start: usize, end: usize) -> String {
-    let mut result = String::new();
-    for byte in bytes[start..end].iter() {
-        write!(result, "[{:#o}]", byte).expect("unable to display byte");
-    }
-    result.push('\n');
-    result
-}
 
 fn parse_bytes(bytes: &[u8]) -> Result<(), String> {
     let mut start_ptr = 0;
@@ -377,7 +349,7 @@ fn parse_bytes(bytes: &[u8]) -> Result<(), String> {
             }
             _ => println!("unable to parse opcode bit {first_byte:#o}"),
         }
-        let parsed_bytes = format_bytes(&bytes, start_ptr, end_ptr);
+        let parsed_bytes = bytes_io::format_bytes(&bytes, start_ptr, end_ptr);
         println!("bytes {}..{} = {}", start_ptr, end_ptr, parsed_bytes);
         start_ptr = end_ptr;
     }
@@ -385,7 +357,7 @@ fn parse_bytes(bytes: &[u8]) -> Result<(), String> {
 }
     
 fn main() -> Result<(), String> {
-    let bytes = read_bytes_cli()?;
+    let bytes = bytes_io::read_bytes_cli()?;
     //let bytes = vec![0o213, 0o56, 0o5, 0o0]; // mov bp, 5
     //let bytes = vec![0o241, 0o373, 0o11]; // mov ax, [2555]
     parse_bytes(&bytes)?;
