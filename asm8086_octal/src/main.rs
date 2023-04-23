@@ -1,5 +1,5 @@
 use std::borrow::Borrow;
-use std::fmt::Display;
+use std::fmt::{Display, Write};
 use std::io::Read;
 use std::{fs, io};
 
@@ -308,74 +308,66 @@ fn read_bytes_cli() -> Result<Vec<u8>, String> {
     }
 }
 
-fn next_byte(bytes: &mut Vec<u8>) -> Result<u8, String> {
-    bytes.pop().ok_or("could not parse byte".into())
-}
-
-fn next_byte_disp(bytes: &mut Vec<u8>) -> Result<Disp, String> {
-    let low_byte = next_byte(bytes)?;
+fn next_byte_disp(bytes: &[u8], end_ptr: usize) -> Result<Disp, String> {
+    let low_byte = *bytes.get(end_ptr).ok_or("could not parse byte")?;
     Ok(Disp::D8(low_byte as i8))
 }
 
-fn next_word_disp(bytes: &mut Vec<u8>) -> Result<Disp, String> {
-    let low_byte = next_byte(bytes)?;
-    let high_byte = next_byte(bytes)?;
+fn next_word_disp(bytes: &[u8], end_ptr: usize) -> Result<Disp, String> {
+    let low_byte = *bytes.get(end_ptr).ok_or("could not parse byte")?;
+    let high_byte = *bytes.get(end_ptr + 1).ok_or("could not parse byte")?;
     let disp_word = to_word(low_byte, high_byte);
     Ok(Disp::D16(disp_word))
 }
 
-fn parse_bytes(mut bytes: Vec<u8>) -> Result<(), String> {
-    bytes.as_mut_slice().reverse();
-    let instruction_start = 0;
-    let instruction_end = 0;
-    while let Ok(first_byte) = next_byte(&mut bytes) {
+fn format_bytes(bytes: &[u8], start: usize, end: usize) -> String {
+    let mut result = String::new();
+    for byte in bytes[start..end].iter() {
+        write!(result, "[{:#o}]", byte).expect("unable to display byte");
+    }
+    result.push('\n');
+    result
+}
+
+fn parse_bytes(bytes: &[u8]) -> Result<(), String> {
+    let mut start_ptr = 0;
+    let mut end_ptr = 0;
+        while start_ptr != bytes.len() {
+        let first_byte = bytes[end_ptr];
+        end_ptr += 1;
         let opcode = opcode_to_instruction(first_byte);
         match opcode {
             Asm8086::Mov(reg, Operand::D(Disp::D8Unread)) => {
-                let disp_byte = next_byte(&mut bytes)?;
-                let disp = Disp::D8(disp_byte as i8);
-                println!("[{first_byte:#o}][{disp_byte:#o}]\nmov {reg}, [{disp}]")
+                let disp = next_byte_disp(bytes, end_ptr)?;
+                end_ptr += 1;
+                println!("mov {reg}, [{disp}]")
             }
             Asm8086::Mov(reg, Operand::D(Disp::D16Unread)) => {
-                let low_byte = next_byte(&mut bytes)?;
-                let high_byte = next_byte(&mut bytes)?;
-                let disp_word = to_word(low_byte, high_byte);
-                let disp = Disp::D16(disp_word);
-                println!("[{first_byte:#o}][{first_byte:#o}][{first_byte:#o}]\nmov {reg}, [{disp}]")
+                let disp = next_word_disp(bytes, end_ptr)?;
+                end_ptr += 2;
+                println!("mov {reg}, [{disp}]")
             },
             Asm8086::Mov(Operand::D(Disp::D16Unread), reg) => {
-                let low_byte = next_byte(&mut bytes)?;
-                let high_byte = next_byte(&mut bytes)?;
-                let disp_word = to_word(low_byte, high_byte);
-                let disp = Disp::D16(disp_word);
-                println!("[{first_byte:#o}][{first_byte:#o}][{first_byte:#o}]\nmov [{disp}], {reg}")
+                let disp = next_word_disp(bytes, end_ptr)?;
+                end_ptr += 2;
+                println!("mov [{disp}], {reg}")
             }
-            Asm8086::Mov(dest, src) | Asm8086::Add(dest, src)=> {
-                let second_byte = next_byte(&mut bytes)?;
+            Asm8086::Mov(dest, src) => {
+                let second_byte = bytes[end_ptr];
+                end_ptr += 1;
                 let (mode, r_or_s, m) = resolve_mov_operands(second_byte);
                 let disp = match (mode, m) {
-                    (Mod::MemoryNoDisp, 6) => {
-                        let low_byte = next_byte(&mut bytes)?;
-                        let high_byte = next_byte(&mut bytes)?;
-                        let disp_word = to_word(low_byte, high_byte);
-                        println!("[{first_byte:#o}][{second_byte:#o}][{low_byte:#o}][{high_byte:#o}]");
-                        Disp::D16(disp_word)
+                    (Mod::MemoryNoDisp, 6) | (Mod::Memory16BitDisp, _) => {
+                        let disp = next_word_disp(bytes, end_ptr)?;
+                        end_ptr += 2;
+                        disp
                     }
                     (Mod::Memory8BitDisp, _) => {
-                        let low_byte = next_byte(&mut bytes)?;
-                        println!("[{first_byte:#o}][{second_byte:#o}][{low_byte:#o}]");
-                        Disp::D8(low_byte as i8)
-                    }
-                    (Mod::Memory16BitDisp, _) => {
-                        let low_byte = next_byte(&mut bytes)?;
-                        let high_byte = next_byte(&mut bytes)?;
-                        println!(
-                            "[{first_byte:#o}][{second_byte:#o}][{low_byte:#o}][{high_byte:#o}]"
-                        );
-                        Disp::D16(to_word(low_byte, high_byte))
+                        let disp = next_byte_disp(bytes, end_ptr)?;
+                        end_ptr += 1;
+                        disp
                     }
                     _ => {
-                        println!("[{first_byte:#o}][{second_byte:#o}]");
                         Disp::None
                     }
                 };
@@ -385,6 +377,9 @@ fn parse_bytes(mut bytes: Vec<u8>) -> Result<(), String> {
             }
             _ => println!("unable to parse opcode bit {first_byte:#o}"),
         }
+        let parsed_bytes = format_bytes(&bytes, start_ptr, end_ptr);
+        println!("bytes {}..{} = {}", start_ptr, end_ptr, parsed_bytes);
+        start_ptr = end_ptr;
     }
     Ok(())
 }
@@ -393,29 +388,6 @@ fn main() -> Result<(), String> {
     let bytes = read_bytes_cli()?;
     //let bytes = vec![0o213, 0o56, 0o5, 0o0]; // mov bp, 5
     //let bytes = vec![0o241, 0o373, 0o11]; // mov ax, [2555]
-    parse_bytes(bytes)?;
+    parse_bytes(&bytes)?;
     Ok(())
 }
-// │ bits 16
-// 18   │ 
-// 19   │ ; Signed displacements
-// 20   │ mov ax, [bx + di - 37]
-// 21   │ mov [si - 300], cx
-// 22   │ mov dx, [bx - 32]
-// 23   │ 
-// 24   │ ; Explicit sizes
-// 25   │ mov [bp + di], byte 7
-// 26   │ mov [di + 901], word 347
-// 27   │ 
-// 28   │ ; Direct address
-// 29   │ mov bp, [5]
-// 30   │ mov bx, [3458]
-// 31   │ 
-// 32   │ ; Memory-to-accumulator test
-// 33   │ mov ax, [2555]
-// 34   │ mov ax, [16]
-// 35   │ 
-// 36   │ ; Accumulator-to-memory test
-// 37   │ mov [2554], ax
-// 38   │ mov [15], ax
-// ───────┴───────────────
