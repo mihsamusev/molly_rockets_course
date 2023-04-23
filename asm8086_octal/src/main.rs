@@ -204,6 +204,9 @@ impl Display for Operand {
 #[derive(Debug)]
 enum Asm8086 {
     Mov(Operand, Operand),
+    Add(Operand, Operand),
+    Sub(Operand, Operand),
+    Cmp(Operand, Operand),
     Unknown,
 }
 
@@ -212,6 +215,10 @@ fn opcode_to_instruction(opcode_byte: u8) -> Asm8086 {
     use Operand::*;
     use WordRegister::*;
     match opcode_byte {
+        0o000 => Asm8086::Add(Eb(Address::ByteRegisterUnread), Rb(Address::ByteRegisterUnread)),
+        0o001 => Asm8086::Add(Ew(Address::WordRegisterUnread), Rw(Address::WordRegisterUnread)),
+        0o002 => Asm8086::Add(Rb(Address::ByteRegisterUnread), Eb(Address::ByteRegisterUnread)),
+        0o003 => Asm8086::Add(Rw(Address::WordRegisterUnread), Ew(Address::WordRegisterUnread)),
         0o210 => Asm8086::Mov(
             Eb(Address::ByteRegisterUnread),
             Rb(Address::ByteRegisterUnread),
@@ -230,12 +237,15 @@ fn opcode_to_instruction(opcode_byte: u8) -> Asm8086 {
         ),
         0o214 => Asm8086::Mov(Ew(Address::WordRegisterUnread), SR),
         0o216 => Asm8086::Mov(SR, Ew(Address::WordRegisterUnread)),
+        // direct from / to accumulator
         0o240 => Asm8086::Mov(Eb(Address::ByteRegister(AL)), D(Disp::D16Unread)),
         0o241 => Asm8086::Mov(Ew(Address::WordRegister(AX)), D(Disp::D16Unread)),
         0o242 => Asm8086::Mov(D(Disp::D16Unread), Eb(Address::ByteRegister(AL))),
         0o243 => Asm8086::Mov(D(Disp::D16Unread), Eb(Address::WordRegister(AX))),
+        // Direct to byte register 0o26r-Db
         0o261 => Asm8086::Mov(Rb(Address::ByteRegister(CL)), D(Disp::D8Unread)),
         0o265 => Asm8086::Mov(Rb(Address::ByteRegister(CH)), D(Disp::D8Unread)),
+        // Direct to word register 0o27r-Dw
         0o271 => Asm8086::Mov(Rw(Address::WordRegister(CX)), D(Disp::D16Unread)),
         0o272 => Asm8086::Mov(Rw(Address::WordRegister(DX)), D(Disp::D16Unread)),
         _ => Asm8086::Unknown,
@@ -316,32 +326,33 @@ fn next_word_disp(bytes: &mut Vec<u8>) -> Result<Disp, String> {
 
 fn parse_bytes(mut bytes: Vec<u8>) -> Result<(), String> {
     bytes.as_mut_slice().reverse();
+    let instruction_start = 0;
+    let instruction_end = 0;
     while let Ok(first_byte) = next_byte(&mut bytes) {
         let opcode = opcode_to_instruction(first_byte);
         match opcode {
             Asm8086::Mov(reg, Operand::D(Disp::D8Unread)) => {
                 let disp_byte = next_byte(&mut bytes)?;
                 let disp = Disp::D8(disp_byte as i8);
-                println!("[{first_byte:#o}][{disp_byte:#o}]\nmov {reg}, {disp}")
+                println!("[{first_byte:#o}][{disp_byte:#o}]\nmov {reg}, [{disp}]")
             }
             Asm8086::Mov(reg, Operand::D(Disp::D16Unread)) => {
                 let low_byte = next_byte(&mut bytes)?;
                 let high_byte = next_byte(&mut bytes)?;
                 let disp_word = to_word(low_byte, high_byte);
                 let disp = Disp::D16(disp_word);
-                println!("[{first_byte:#o}][{first_byte:#o}][{first_byte:#o}]\nmov {reg}, {disp}")
+                println!("[{first_byte:#o}][{first_byte:#o}][{first_byte:#o}]\nmov {reg}, [{disp}]")
             },
             Asm8086::Mov(Operand::D(Disp::D16Unread), reg) => {
                 let low_byte = next_byte(&mut bytes)?;
                 let high_byte = next_byte(&mut bytes)?;
                 let disp_word = to_word(low_byte, high_byte);
                 let disp = Disp::D16(disp_word);
-                println!("[{first_byte:#o}][{first_byte:#o}][{first_byte:#o}]\nmov {disp}, {reg}")
+                println!("[{first_byte:#o}][{first_byte:#o}][{first_byte:#o}]\nmov [{disp}], {reg}")
             }
-            Asm8086::Mov(dest, src) => {
+            Asm8086::Mov(dest, src) | Asm8086::Add(dest, src)=> {
                 let second_byte = next_byte(&mut bytes)?;
                 let (mode, r_or_s, m) = resolve_mov_operands(second_byte);
-                //println!("{mode:?} {r_or_s} {m}");
                 let disp = match (mode, m) {
                     (Mod::MemoryNoDisp, 6) => {
                         let low_byte = next_byte(&mut bytes)?;
@@ -372,7 +383,7 @@ fn parse_bytes(mut bytes: Vec<u8>) -> Result<(), String> {
                 let dest = resolve_address(dest, mode, r_or_s, m, disp);
                 println!("mov {dest}, {src}");
             }
-            Asm8086::Unknown => println!("unable to parse opcode bit {first_byte:#o}"),
+            _ => println!("unable to parse opcode bit {first_byte:#o}"),
         }
     }
     Ok(())
