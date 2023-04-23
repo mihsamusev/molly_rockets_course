@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::fmt::Display;
 use std::io::Read;
 use std::{fs, io};
@@ -251,49 +252,65 @@ fn resolve_address(operand: Operand, mode: Mod, r_or_s: u8, m: u8, disp: Option<
     }
 }
 
-fn to_disp(low_bit: u8, high_bit: u8) -> i16 {
-    ((high_bit as i16) << 8) | (low_bit as i16)
+fn to_disp(low_byte: u8, high_byte: u8) -> i16 {
+    ((high_byte as i16) << 8) | (low_byte as i16)
+}
+
+fn read_bytes_cli() -> Result<Vec<u8>, String> {
+    let args: Vec<String> = std::env::args().collect();
+    match args.len() {
+        1 => Err("Have not found binary to decompile".into()),
+        _ => {
+            let filename = args[1].borrow();
+            read_bytes(filename).map_err(|_| format!("Unable to read file '{}'", filename))
+        }
+    }
+}
+
+fn next_byte(bytes: &mut Vec<u8>) -> Result<u8, String> {
+    bytes.pop().ok_or("could not parse byte".into())
 }
 
 fn main() -> Result<(), String> {
-    //let mut instructions = Vec::new();
-    let mut bytes = read_bytes("listing_0039_more_movs.bin").expect("cant");
+    let mut bytes = read_bytes_cli()?;
     bytes.as_mut_slice().reverse();
-    while let Some(first_bit) = bytes.pop() {
-        let opcode = opcode_to_instruction(first_bit);
+    while let Ok(first_byte) = next_byte(&mut bytes) {
+        let opcode = opcode_to_instruction(first_byte);
         match opcode {
             Asm8086::Mov(reg, Operand::DcUnread) => {
-                let value_bit = bytes.pop().ok_or("could not finish parsing")?;
-                let value = value_bit as i8;
-                println!("[{first_bit:#o}][{value_bit:#o}]\nmov {reg}, {value}")
+                let value_byte = next_byte(&mut bytes)?;
+                let value = value_byte as i8;
+                println!("[{first_byte:#o}][{value_byte:#o}]\nmov {reg}, {value}")
             }
             Asm8086::Mov(reg, Operand::DwUnread) => {
-                let low_bit = bytes.pop().ok_or("could not finish parsing")?;
-                let high_bit = bytes.pop().ok_or("could not finish parsing")?;
-                let value = to_disp(low_bit, high_bit);
-                println!("[{first_bit:#o}][{low_bit:#o}][{high_bit:#o}]\nmov {reg}, {value}")
+                let low_byte = next_byte(&mut bytes)?;
+                let hihh_byte = next_byte(&mut bytes)?;
+                let value = to_disp(low_byte, hihh_byte);
+                println!("[{first_byte:#o}][{first_byte:#o}][{first_byte:#o}]\nmov {reg}, {value}")
             }
             Asm8086::Mov(dest, src) => {
-                let second_bit = bytes.pop().ok_or("could not finish parsing")?;
-                let (mode, r_or_s, m) = resolve_mov_operands(second_bit);
+                let second_byte = next_byte(&mut bytes)?;
+                let (mode, r_or_s, m) = resolve_mov_operands(second_byte);
                 let disp = match (mode, r_or_s) {
                     (Mod::MemoryNoDisp, 6) => {
-                        println!("[{first_bit:#o}][{second_bit:#o}]");
-                        Some(second_bit as i16)
+                        println!("[{first_byte:#o}][{second_byte:#o}]");
+                        Some(second_byte as i16)
                     }
                     (Mod::Memory8BitDisp, _) => {
-                        let low_bit = bytes.pop().ok_or("could not finish parsing")?;
-                        println!("[{first_bit:#o}][{second_bit:#o}][{low_bit:#o}]");
-                        Some(low_bit as i16)
+                        let low_byte = next_byte(&mut bytes)?;
+                        println!("[{first_byte:#o}][{second_byte:#o}][{low_byte:#o}]");
+                        Some(low_byte as i16)
                     }
                     (Mod::Memory16BitDisp, _) => {
-                        let low_bit = bytes.pop().ok_or("could not finish parsing")?;
-                        let high_bit = bytes.pop().ok_or("could not finish parsing")?;
-                        println!("[{first_bit:#o}][{second_bit:#o}][{low_bit:#o}][{high_bit:#o}]");
-                        Some(to_disp(low_bit, high_bit))
+                        let low_byte = next_byte(&mut bytes)?;
+                        let high_byte = next_byte(&mut bytes)?;
+                        println!(
+                            "[{first_byte:#o}][{second_byte:#o}][{low_byte:#o}][{high_byte:#o}]"
+                        );
+                        Some(to_disp(low_byte, high_byte))
                     }
                     _ => {
-                        println!("[{first_bit:#o}][{second_bit:#o}]");
+                        println!("[{first_byte:#o}][{second_byte:#o}]");
                         None
                     }
                 };
@@ -301,38 +318,8 @@ fn main() -> Result<(), String> {
                 let dest = resolve_address(dest, mode, r_or_s, m, disp);
                 println!("mov {dest}, {src}");
             }
-            Asm8086::Unknown => println!("unable to parse opcode bit {first_bit:#o}"),
+            Asm8086::Unknown => println!("unable to parse opcode bit {first_byte:#o}"),
         }
     }
     Ok(())
 }
-
-//  ; Register-to-register
-//   20   │ mov si, bx
-//   21   │ mov dh, al
-//   22   │
-//   23   │ ; 8-bit immediate-to-register
-//   24   │ mov cl, 12
-//   25   │ mov ch, -12
-//   26   │
-//   27   │ ; 16-bit immediate-to-register
-//   28   │ mov cx, 12
-//   29   │ mov cx, -12
-//   30   │ mov dx, 3948
-//   31   │ mov dx, -3948
-//   32   │
-//   33   │ ; Source address calculation
-//   34   │ mov al, [bx + si]
-//   35   │ mov bx, [bp + di]
-//   36   │ mov dx, [bp]
-//   37   │
-//   38   │ ; Source address calculation plus 8-bit displacement
-//   39   │ mov ah, [bx + si + 4]
-//   40   │
-//   41   │ ; Source address calculation plus 16-bit displacement
-//   42   │ mov al, [bx + si + 4999]
-//   43   │
-//   44   │ ; Dest address calculation
-//   45   │ mov [bx + di], cx
-//   46   │ mov [bp + si], cl
-//   47   │ mov [bp], ch

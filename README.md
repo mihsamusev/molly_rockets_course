@@ -89,9 +89,27 @@ rm field - which equation for memory address calculation to use
 Immediate to register mov
 [1011][wide][REG] [LO][HI]
 
-mov [BP + 75], byte 12 -> move as 8 bits
-mov [BP + 75], word 12 -> move as 16 bits
+mov [BP + 75], byte 12 -> move as signed byte
+mov [BP + 75], word 12 -> move as signed 2 bytes low|high
 
 One caveat is that the following 2 are same binary, since unless actual arithmetic is performed all values are unsigned.
 mov cx, 12
 mov cx, -12
+
+
+## Feature of 8086
+Because `add`, `sub`, `cmp` is encoded as mov add can manipulate any memory / register combo
+```asm
+add bx, 12
+```
+
+```asm
+mov ax, [bp]
+mov bx, [bp + 2]
+add ax, bx
+```
+
+```asm
+mov ax, [bp]
+add ax, [bp + 2]
+```
