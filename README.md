@@ -1,6 +1,9 @@
 ## Performance aware programming course notes and drafts
 Course link: https://www.computerenhance.com/p/table-of-contents
 
+## Useful links
+- [Andrew Kelly - Practical DOD](https://vimeo.com/649009599)
+:
 ## CPU internals awareness
 No matter the level of programming language / programming style or framework we are using, it all ends in CPU performing the instructions prepared by the compiler / interpreter of the language. There are 3 main ways to make a CPU bound operation faster for a single CPU:
 - reduce number of instrutions, reduce waste not associated with computing task or use SIMD (single instruction multiple data)
