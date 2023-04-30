@@ -24,16 +24,17 @@ impl ByteRegister {
 
 impl Display for ByteRegister {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match *self {
-            AL => write!(f, "al"),
-            CL => write!(f, "cl"),
-            DL => write!(f, "dl"),
-            BL => write!(f, "bl"),
-            AH => write!(f, "ah"),
-            CH => write!(f, "ch"),
-            DH => write!(f, "dh"),
-            BH => write!(f, "bh"),
-        }
+        let text = match *self {
+            AL => "al",
+            CL => "cl",
+            DL => "dl",
+            BL => "bl",
+            AH => "ah",
+            CH => "ch",
+            DH => "dh",
+            BH => "bh",
+        };
+        write!(f, "{}", text)
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -58,16 +59,17 @@ impl WordRegister {
 
 impl Display for WordRegister {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match *self {
-            AX => write!(f, "ax"),
-            CX => write!(f, "cx"),
-            DX => write!(f, "dx"),
-            BX => write!(f, "bx"),
-            SP => write!(f, "sp"),
-            BP => write!(f, "bp"),
-            SI => write!(f, "si"),
-            DI => write!(f, "di"),
-        }
+        let text = match *self {
+            AX => "ax",
+            CX => "cx",
+            DX => "dx",
+            BX => "bx",
+            SP => "sp",
+            BP => "bp",
+            SI => "si",
+            DI => "di",
+        };
+        write!(f, "{}", text)
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -200,6 +202,11 @@ enum Asm8086 {
     Unknown,
 }
 
+
+enum Type {
+    BetweenRegisters
+}
+
 fn opcode_to_instruction(opcode_byte: u8) -> Asm8086 {
     use ByteRegister::*;
     use Operand::*;
@@ -250,10 +257,15 @@ enum Mod {
     Register,
 }
 
+fn byte_octals(byte: u8) -> (u8, u8, u8) {
+    let first = (byte & 0b11000000) >> 6;
+    let second = (byte & 0b00111000) >> 3;
+    let third = byte & 0b00000111;
+    (first, second, third)
+}
+
 fn resolve_mov_operands(byte: u8) -> (Mod, u8, u8) {
-    let x = (byte & 0b11000000) >> 6;
-    let r_or_s = (byte & 0b00111000) >> 3;
-    let m = byte & 0b00000111;
+    let (x, r_or_s, m) = byte_octals(byte);
     let mode = match x {
         0 => Mod::MemoryNoDisp,
         1 => Mod::Memory8BitDisp,
