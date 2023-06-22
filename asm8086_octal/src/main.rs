@@ -278,7 +278,7 @@ fn resolve_mov_operands(byte: u8) -> (Mod, u8, u8) {
 fn resolve_address(operand: Operand, mode: Mod, r_or_s: u8, m: u8, disp: Disp) -> Address {
     use Operand::*;
     match (operand, mode, m) {
-        (Ew(_), Mod::MemoryNoDisp, 6) => Address::Pointer(Pointer::direct(disp)),
+        (_, Mod::MemoryNoDisp, 6) => Address::Pointer(Pointer::direct(disp)),
         (Rb(_), _, _) => Address::ByteRegister(ByteRegister::from_r(r_or_s)),
         (Rw(_), _, _) => Address::WordRegister(WordRegister::from_r(r_or_s)),
         (Eb(_), Mod::MemoryNoDisp, _) => Address::Pointer(Pointer::with_disp(m, disp)),
@@ -361,6 +361,7 @@ fn parse_bytes(bytes: &[u8]) -> Result<(), String> {
             }
             _ => println!("unable to parse opcode bit {first_byte:#o}"),
         }
+
         let parsed_bytes = bytes_io::format_bytes(&bytes, start_ptr, end_ptr);
         println!("bytes {}..{} = {}", start_ptr, end_ptr, parsed_bytes);
         start_ptr = end_ptr;
@@ -372,6 +373,9 @@ fn main() -> Result<(), String> {
     let bytes = bytes_io::read_bytes_cli()?;
     //let bytes = vec![0o213, 0o56, 0o5, 0o0]; // mov bp, 5
     //let bytes = vec![0o241, 0o373, 0o11]; // mov ax, [2555]
+
+    let bytes = vec![0o260, 0o001]; // mov al, [1]
+    let bytes = vec![0o271, 0o001, 0o000]; // mov cx, [1]
     parse_bytes(&bytes)?;
     Ok(())
 }

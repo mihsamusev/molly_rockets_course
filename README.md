@@ -116,3 +116,57 @@ add ax, bx
 mov ax, [bp]
 add ax, [bp + 2]
 ```
+
+## movs and arithmetics cheet sheet
+Arithmetics
+```
+P Op           Description
+0 ADD L, E     L += E
+2 ADC L, E     L += E + CF
+5 SUB L, E     L -= E
+3 SBB L, E     L -= E + CF
+7 CMP L, E     (void)(L - E)
+1 OR L, E      L |= E
+4 AND L, E     L &= E
+6 XOR L, E     L ^= E
+    # arithmetics between registers / addresses
+    0P0 xrm          Op Eb, Rb
+    0P1 xrm          Op Ew, Rw
+    0P2 xrm          Op Rb, Eb
+    0P3 xrm          Op Rw, Ew
+
+    # immediate to accumulator
+    0P4 Db           Op AL, Db
+    0P5 Dw           Op AX, Dw
+    
+    # immediate to address / register
+    200 xPm Db       Op Eb, Db
+    201 xPm Dw       Op Ew, Dw
+    203 xPm Dc       Op Ew, Dc
+```
+
+Movs
+```
+MOV L, E       L = E;
+    # move between registers / addresses
+    210 xrm         mov Eb, Rb
+    211 xrm         mov Ew, Rw
+    212 xrm         mov Rb, Eb
+    213 xrm         mov Rw, Ew
+    214 xsm         mov Es, SR   (s = 0-3,   (#) 4-5)
+    216 xsm         mov SR, Es   (s = 0,2-3, (#) 4-5)
+    
+    # immediate to accumulator
+    240 Dw          mov AL, [Dw]
+    241 Dw          mov AX, [Dw]
+    242 Dw          mov [Dw], AL
+    243 Dw          mov [Dw], AX
+
+    # immediate to register
+    26r Db          mov Rb, Db
+    27r Dw          mov Rw, Dw
+
+    # immediate to address
+    306 x0m Db      mov Eb, Db
+    307 x0m Dw      mov Ew, Dw
+```
